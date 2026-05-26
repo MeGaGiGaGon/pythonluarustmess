@@ -1,0 +1,122 @@
+string
+Current items to be implemented by magic in the python interpreter:
+  Collection and String
+    split
+    add
+  Integer
+  stdin
+  input
+  print
+  progress
+    get
+  Mapping
+    get
+    set
+  all
+end
+
+string
+Unnamable items inside enum or record like call become integer indexed
+Enum variants can be iterated over like a list
+end
+
+enum CodeItem
+  ref String
+  ref Empty
+  ref Boolean
+  record NameRef
+    name String
+  end
+
+  Enum is Block
+  Record is Mapping of keys String values CodeItem end
+  record Function
+    arguments Record
+    body Block
+  end
+  record Match
+    matched CodeItem
+    cases Collection of items record MatchCase
+      case_condition CodeItem
+      body CodeItem
+    end end
+  end
+  record Loop
+    enum LoopType
+      For
+      While
+    end
+    enum LoopEndType
+      Collect
+      Last
+    end
+    iterator CodeItem
+    target CodeItem
+    body Block
+  end
+  record Block
+    body Collection of items CodeItem end
+  end
+  record Error
+    message String
+  end
+  record If
+    bodies Collection of record IfBodies
+      condition CodeItem
+      body Block
+    end end
+    else Block
+  end
+end
+
+record Token
+  ref CodeItem
+  ref String
+end
+
+function tokenize String to Collection of items Token end
+  input is call input splitlines anon record keepends True end
+  input is for line in input for item in call line split Empty item end end
+  while collect not call input empty Empty
+    item is call input pop zero
+    new Token if call call item strip Empty startsWith stringstring string endend
+      split is call item split stringstring string endend
+      if call call builtins all for collect item in split not call item empty Empty end
+          and index is call input index call stringstring end endend mul call split len Empty
+          new CodeItem new String items call call input take call index add one take index end end
+        else
+          new CodeItem new Error stringstring Missing end in string endend end end
+        end
+    else match item
+      string Empty end new CodeItem Empty end
+      string True end new CodeItem True end
+      string False end new CodeItem False end
+      string ref end if not call input empty Empty new CodeItem new NameRef name call input pop zero end end
+        else new CodeItem new Error mesage string ref at EOF end end end
+      String item
+    end end
+  end
+end
+
+record TokensWithNames
+  tokens Collection of items Token end
+  record names
+    topName String
+    enum topType Enum Record end
+    names Collection of items String end
+  end
+end
+
+stringstring
+Operators:
+  or
+  and
+  call
+  new
+
+endend
+
+function gatherEnumAndRecordNames Collection of items Token end to TokensWithNames
+  string Do this now so we have the names for future lookups end
+
+end
