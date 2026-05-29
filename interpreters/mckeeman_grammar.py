@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Never, final, Literal, override, reveal_type
+from typing import Never, final, Literal, override
 from collections.abc import Callable, Sequence
 
 @final
@@ -259,29 +259,80 @@ def make_meta_spanned[**P, O, E](parser_maker: Callable[P, Parser[O, E]]) -> Cal
     return new_parser_maker
 
 wsitem = any_of(" \n\t\r")
-wscomment = ForwardRefParser(lambda: wsitem.then(comment).unpack_then(wsitem))
+@dataclass
+class WSComment:
+    sep1: str
+    comment: Comment
+    sep2: str
+wscomment = ForwardRefParser(lambda: wsitem.then(comment).unpack_then(wsitem).star_map_ok(WSComment))
 @dataclass
 class Whitespace:
-    inner: str | tuple[tuple[str, tuple[str, tuple[str, Whitespace, Commenttail], str] | tuple[str, Whitespace, Commenttail], str], Whitespace] | tuple[str, Whitespace]
+    inner: str | tuple[str, Whitespace] | tuple[WSComment, Whitespace]
 ws = ForwardRefParser[Whitespace, None](lambda: (wsitem.then(ws) | wscomment.then(ws) | wsitem).map_ok(Whitespace))
 
 digit = any_of([  "zero","one","two","three","four","five","six","seven","eight","nine"])
-number = just("number").then(ws).unpack_then(digit.one_or_more()).unpack_then(ws).unpack_then(just("end")).debug("number")
+@dataclass
+class Number:
+    start: str
+    sep1: Whitespace
+    number: int
+    sep2: Whitespace
+    end: str
+number = just("number").then(ws).unpack_then(digit.one_or_more().map_ok("".join).map_ok(int)).unpack_then(ws).unpack_then(just("end")).star_map_ok(Number).debug("number")
 
 chars = char_in_range(0x21, 0x10FFFF).one_or_more().map_ok("".join)
 
-type Stringtail = str | tuple[str, Whitespace, Stringtail]
 stringtail = ForwardRefParser[Sequence[str], None](lambda: (wsitem.one_or_more().map_ok("".join).then(just("end")) | wsitem.one_or_more().map_ok("".join).then(chars).unpack_then(stringtail)).map_ok(lambda x: [x[0], x[1]] if len(x) == 2 else [x[0], x[1], *x[2]]))
-string = just("string").then(stringtail).map_ok(lambda x: (x[0], Whitespace(x[1][0]), "".join(x[1][1:-2]), Whitespace(x[1][-2]), x[1][-1])).debug("string")
+@dataclass
+class String:
+    start: str
+    sep1: Whitespace
+    string: str
+    sep2: Whitespace
+    end: str
+string = just("string").then(stringtail).map_ok(lambda x: String(x[0], Whitespace(x[1][0]), "".join(x[1][1:-2]), Whitespace(x[1][-2]), x[1][-1])).debug("string")
 
-type Commenttail = str | tuple[str, Whitespace, Commenttail]
-commenttail = ForwardRefParser[Commenttail, None](lambda: just("end") | chars.then(ws).unpack_then(commenttail))
-comment = just("comment").then(ws).unpack_then(commenttail)
+@dataclass
+class Comment:
+    start: str
+    sep1: Whitespace
+    string: str
+    sep2: Whitespace
+    end: str
+comment = just("comment").then(stringtail).map_ok(lambda x: Comment(x[0], Whitespace(x[1][0]), "".join(x[1][1:-2]), Whitespace(x[1][-2]), x[1][-1])).debug("comment")
 
-call = ForwardRefParser(lambda: just("call").then(ws).unpack_then(item).unpack_then(ws).unpack_then(item).unpack_then(ws).unpack_then(item))
+@dataclass
+class Call:
+    start: str
+    sep1: Whitespace
+    method_of: Item
+    sep2: Whitespace
+    method_name: Item
+    sep3: Whitespace
+    call_value: Item
+call = ForwardRefParser(lambda: just("call").then(ws).unpack_then(item).unpack_then(ws).unpack_then(item).unpack_then(ws).unpack_then(item).star_map_ok(Call))
 
-assign = ForwardRefParser(lambda: just("call").then(ws).unpack_then(nameitem).unpack_then(ws).unpack_then(item))
+@dataclass
+class Assign:
+    start: str
+    sep1: Whitespace
+    assign_to: NameItem
+    sep2: Whitespace
+    value: Item
+assign = ForwardRefParser(lambda: just("call").then(ws).unpack_then(nameitem).unpack_then(ws).unpack_then(item).star_map_ok(Assign))
 
+@dataclass
+class ForLoop:
+    type: str
+    sep1: Whitespace
+    assign_to: NameItem
+    sep2: Whitespace
+    in_: str
+    sep3: Whitespace
+    iter_over: Item
+    sep4: Whitespace
+    block: BlockItem
+    end: str
 forloop = ForwardRefParser(lambda: (
     forlooptype
     .then(ws)
@@ -292,45 +343,77 @@ forloop = ForwardRefParser(lambda: (
     .unpack_then(item)
     .unpack_then(ws)
     .unpack_then(blockitem)
-    .unpack_then(ws)
-    .unpack_then(just("end"))
+    .unpack_then(just("end")).star_map_ok(ForLoop)
 ))
 forlooptype = just("for") | just("forcollect")
 
+@dataclass
+class WhileLoop:
+    type: str
+    sep1: Whitespace
+    condition: Item
+    sep2: Whitespace
+    block: BlockItem
+    end: str
 whileloop = ForwardRefParser(lambda: (
     whilelooptype
     .then(ws)
-    .unpack_then(nameitem)
-    .unpack_then(ws)
-    .unpack_then(just("in"))
-    .unpack_then(ws)
     .unpack_then(item)
     .unpack_then(ws)
     .unpack_then(blockitem)
-    .unpack_then(ws)
-    .unpack_then(just("end"))
+    .unpack_then(just("end")).star_map_ok(WhileLoop)
 ))
 whilelooptype = just("while") | just("whilecollect")
 
-match = ForwardRefParser(lambda: just("match").then(ws).unpack_then(item).unpack_then(ws).unpack_then(cases).unpack_then(ws).unpack_then(just("end")))
-type Cases = tuple[Item, Whitespace, Item] | tuple[Item, Whitespace, Item, Whitespace, Cases]
-cases = ForwardRefParser[Cases, None](lambda: (item.then(ws).unpack_then(item) | item.then(ws).unpack_then(item).unpack_then(ws).unpack_then(cases)))
+@dataclass
+class Match:
+    start: str
+    sep1: Whitespace
+    scrutinee: Item
+    sep2: Whitespace
+    cases: Sequence[Case]
+    sep3: Whitespace
+    end: str
+match = ForwardRefParser(lambda: just("match").then(ws).unpack_then(item).unpack_then(ws).unpack_then(case.one_or_more()).unpack_then(ws).unpack_then(just("end")).star_map_ok(Match))
+type Case = tuple[Item, Whitespace, Item, Whitespace]
+case = ForwardRefParser[Case, None](lambda: (item.then(ws).unpack_then(item).unpack_then(ws)))
 
-name = ForwardRefParser[str, None](lambda: char_in_range(0x21, 0x10FFFF).one_or_more().map_ok("".join)).debug("name")
+@dataclass
+class Name:
+    value: str
+name = ForwardRefParser(func=lambda: char_in_range(0x21, 0x10FFFF).one_or_more().map_ok("".join).map_ok(Name)).debug("name")
 
-type GenericNames = str | tuple[str, str] | tuple[str, GenericNames]
-generic_names = ForwardRefParser[GenericNames, None](lambda: name | name.then(generic_names))
-generics = ws.then(just("generics")).unpack_then(ws).unpack_then(generic_names).unpack_then(ws).unpack_then(just("end")).unpack_then(ws) | ws
+generic_name: Parser[tuple[NameItem, Whitespace], None] = ForwardRefParser(lambda: name.then(ws))
+type Generics = tuple[Whitespace, str, Whitespace, Sequence[tuple[Name, Whitespace]], Whitespace, str, Whitespace] | Whitespace
+generics: Parser[Generics, None] = ws.then(just("generics")).unpack_then(ws).unpack_then(generic_name.one_or_more()).unpack_then(ws).unpack_then(just("end")).unpack_then(ws) | ws
 
 type Implementations = Function | tuple[Function, Whitespace, Implementations]
 implementations = ForwardRefParser[Implementations, None](lambda: (function | function.then(ws).unpack_then(implementations)))
 
-enum = ForwardRefParser(lambda: just("enum").then(ws).unpack_then(nameitem).unpack_then(generics).unpack_then(enumbody).unpack_then(ws).unpack_then(just("end"))).debug("enum")
+@dataclass
+class Enum:
+    start: str
+    sep1: Whitespace
+    name: NameItem
+    generics: Generics
+    body: NameItem | tuple[NameItem, Whitespace, EnumMembers] | tuple[EnumMembers, Whitespace, str, Whitespace, Implementations]
+    sep2: Whitespace
+    end: str
+enum = ForwardRefParser(lambda: just("enum").then(ws).unpack_then(nameitem).unpack_then(generics).unpack_then(enumbody).unpack_then(ws).unpack_then(just("end")).star_map_ok(Enum)).debug("enum")
 type EnumMembers = NameItem | tuple[NameItem, Whitespace, EnumMembers]
 enummembers = ForwardRefParser[EnumMembers, None](lambda: nameitem | nameitem.then(ws).unpack_then(enummembers))
 enumbody = enummembers | enummembers.then(ws).unpack_then(just("implement")).unpack_then(ws).unpack_then(implementations)
 
-record = ForwardRefParser(lambda: just("record").then(ws).unpack_then(nameitem).unpack_then(generics).unpack_then(recordbody).unpack_then(ws).unpack_then(just("end")))
+@dataclass
+class Record:
+    start: str
+    sep1: Whitespace
+    name: NameItem
+    generics: Generics
+    body: tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers] | tuple[RecordMembers, Whitespace, str, Whitespace, Implementations]
+    sep2: Whitespace
+    end: str
+record = ForwardRefParser(lambda: just("record").then(ws).unpack_then(nameitem).unpack_then(generics).unpack_then(recordbody).unpack_then(ws).unpack_then(just("end")).star_map_ok(Record))
 type RecordMembers = tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers]
 recordmembers = ForwardRefParser[RecordMembers, None](lambda: nameitem.then(ws).unpack_then(typeitem) | nameitem.then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(recordmembers))
 recordbody = recordmembers | recordmembers.then(ws).unpack_then(just("implement")).unpack_then(ws).unpack_then(implementations)
@@ -340,21 +423,34 @@ class Function:
     inner: tuple[str, Whitespace, NameItem, Whitespace, TypeItem, Whitespace, str, Whitespace, TypeItem, Whitespace, str]
 function = ForwardRefParser[Function, None](lambda: just("function").then(ws).unpack_then(nameitem).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(just("to")).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(just("end")).map_ok(Function))
 
-ref = ForwardRefParser(lambda: just("ref").then(ws).unpack_then(nameitem)).debug("ref")
+@dataclass
+class Ref:
+    start: str
+    sep1: Whitespace
+    name: NameItem
+ref = ForwardRefParser(lambda: just("ref").then(ws).unpack_then(nameitem).star_map_ok(Ref)).debug("ref")
 
-type BlockItem = Item | tuple[Item, Whitespace, BlockItem]
-blockitem = ForwardRefParser[BlockItem, None](lambda: item.then(ws).unpack_then(blockitem).debug("blockitemr") | item.debug("blockitemc"))
-block = just("block").then(ws).unpack_then(blockitem).unpack_then(ws).unpack_then(just("end")).debug("blockstmt")
+type BlockItem = Sequence[tuple[Item, Whitespace]] | Whitespace
+blockitem = ForwardRefParser[BlockItem, None](lambda: item.then(ws).one_or_more() | ws)
+@dataclass
+class Block:
+    start: str
+    sep1: Whitespace
+    block: BlockItem
+    end: str
+block = just("block").then(ws).unpack_then(blockitem).unpack_then(just("end")).star_map_ok(Block).debug("blockstmt")
 
-type Item = tuple[str, Whitespace, Digits, Whitespace, str] | tuple[str, Whitespace, Stringtail] | tuple[str, Whitespace, Item, Whitespace, Item, Whitespace, Item] | tuple[str, Whitespace, NameItem, Whitespace, Item] | tuple[str, Whitespace, NameItem, Whitespace, str, Whitespace, Item, Whitespace, BlockItem, Whitespace, str] | tuple[str, Whitespace, Item, Whitespace, Cases, Whitespace, str] | tuple[str, Whitespace, NameItem, tuple[Whitespace, str, Whitespace, GenericNames, Whitespace, str, Whitespace] | Whitespace, NameItem | tuple[NameItem, Whitespace, EnumMembers] | tuple[EnumMembers, Whitespace, str, Whitespace, Implementations], Whitespace, str] | tuple[str, Whitespace, NameItem, tuple[Whitespace, str, Whitespace, GenericNames, Whitespace, str, Whitespace] | Whitespace, tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers] | tuple[RecordMembers, Whitespace, str, Whitespace, Implementations], Whitespace, str] | Function | tuple[str, Whitespace, NameItem] | str | tuple[str, str] | tuple[str, Whitespace, BlockItem, Whitespace, str]
-item: Parser[Item, None] = (number | string | call | assign | forloop | whileloop | match | enum | record | function | ref | name | block).debug("item")
+@dataclass
+class Item:
+    inner: Number | String | Call | Assign | ForLoop | WhileLoop | Match | Enum | Record | Function | Ref | Name | Block
+item = (number | string | call | assign | forloop | whileloop | match | enum | record | function | ref | name | block).map_ok(Item).debug("item")
 
-type NameItem = str | tuple[str, Whitespace, Stringtail] | tuple[str, Whitespace, NameItem, Whitespace, Item] | tuple[str, Whitespace, NameItem, tuple[Whitespace, str, Whitespace, GenericNames, Whitespace, str, Whitespace] | Whitespace, NameItem | tuple[NameItem, Whitespace, EnumMembers] | tuple[EnumMembers, Whitespace, str, Whitespace, Implementations], Whitespace, str] | tuple[str, Whitespace, NameItem, tuple[Whitespace, str, Whitespace, GenericNames, Whitespace, str, Whitespace] | Whitespace, tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers] | tuple[RecordMembers, Whitespace, str, Whitespace, Implementations], Whitespace, str] | Function | tuple[str, Whitespace, NameItem]
+type NameItem = String | Assign | Enum | Record | Function | Ref | Name
 nameitem: Parser[NameItem, None] = (string | assign | enum | record | function | ref | name).debug("nameitem")
 
-type TypeItem = str | tuple[str, str] | tuple[str, Whitespace, str, Whitespace, TypeItemGenerics, Whitespace, str]
+type TypeItem = Name |  tuple[Name, Whitespace, str, Whitespace, TypeItemGenerics, Whitespace, str]
 typeitem: Parser[TypeItem, None] = ForwardRefParser(lambda: name | name.then(ws).unpack_then(just("of")).unpack_then(ws).unpack_then(typeitemgenerics).unpack_then(ws).unpack_then(just("end")))
-type TypeItemGenerics = tuple[str, Whitespace, TypeItem] | tuple[str, Whitespace, TypeItem, Whitespace, TypeItemGenerics]
+type TypeItemGenerics = tuple[Name, Whitespace, TypeItem] | tuple[Name, Whitespace, TypeItem, Whitespace, TypeItemGenerics]
 typeitemgenerics: Parser[TypeItemGenerics, None] = ForwardRefParser(lambda: name.then(ws).unpack_then(typeitem) | name.then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(typeitemgenerics))
 
 print(blockitem(open("interpreters/interpreter.plrm").read(), 0))

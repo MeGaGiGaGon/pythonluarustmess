@@ -57,16 +57,17 @@ number
   "number" ws digit+ ws "end"
 
 chars
-  '0020' . '10FFFF' chars
-  '0020' . '10FFFF'
+  '0020' . '10FFFF'+
+
+stringtail
+  wsitem+ "end"
+  wsitem+ chars stringtail
 
 string
-  "string" string "end"
-  "string" ws chars ws "end"
+  "string" stringtail
 
 comment
-  "comment" comment "end"
-  "comment" ws chars ws "end"
+  "comment" stringtail
 
 call
   "call" ws item ws item ws item
@@ -89,19 +90,17 @@ whilelooptype
   "whilecollect"
 
 match
-  "match" ws item ws cases ws "end"
+  "match" ws item ws case+ "end"
 
-cases
-  item ws item
-  item ws item ws cases
+case
+  item ws item ws
 
 generics
-  ws "generics" ws genericnames ws "end" ws
+  ws "generics" ws genericname+ ws "end" ws
   ws
 
-genericnames
-  name
-  name ws genericnames
+genericname
+  name ws
 
 enum
   "enum" ws nameitem generics enumbody ws "end"
@@ -115,7 +114,11 @@ enummembers
   nameitem ws enummembers
 
 record
-  "record" ws nameitem generics recordbody ws "end"
+  recordtype ws nameitem generics recordbody ws "end"
+
+recordtype
+  "record"
+  "varadicrecord"
 
 recordbody
   recordmembers
@@ -140,11 +143,14 @@ name
   '0021' . '10FFFF' name
 
 block
-  "block" ws blockitem ws "end"
+  "block" ws blockitem+ "end"
 
 blockitem
-  item
-  item ws blockitem
+  blockiteminner+
+  ws
+
+blockiteminner
+  item ws
 
 item
   number
