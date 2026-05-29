@@ -19,6 +19,164 @@ result.
 - Syntax
 
 ## Features/Syntax
+### McKeeman Form Grammar
+```
+ws
+  wsitem
+  wscomment ws
+  wsitem ws
+
+wsitem
+  '0020'
+  '000A'
+  '000D'
+  '0009'
+
+wscomment
+  wsitem comment wsitem
+
+number
+  "number" ws digits ws "end"
+
+digits
+  digit
+  digit ws digits
+
+digit
+  "zero"
+  "one"
+  "two"
+  "three"
+  "four"
+  "five"
+  "six"
+  "seven"
+  "eight"
+  "nine"
+
+chars
+  '0020' . '10FFFF' chars
+  '0020' . '10FFFF'
+
+string
+  "string" string "end"
+  "string" ws chars ws "end"
+
+comment
+  "comment" comment "end"
+  "comment" ws chars ws "end"
+
+call
+  "call" ws item ws item ws item
+
+assign
+  "assign" ws nameitem ws item
+
+forloop
+  forlooptype ws nameitem ws "in" ws item ws block ws "end"
+
+forlooptype
+  "for"
+  "forcollect"
+
+whileloop
+  whilelooptype ws item ws block ws "end"
+
+whilelooptype
+  "while"
+  "whilecollect"
+
+match
+  "match" ws item ws cases ws "end"
+
+cases
+  item ws item
+  item ws item ws cases
+
+generics
+  ws "generics" ws genericnames ws "end" ws
+  ws
+
+genericnames
+  name
+  name ws genericnames
+
+enum
+  "enum" ws nameitem generics enumbody ws "end"
+
+enumbody
+  enummembers
+  enummembers ws "implement" ws implementations
+
+enummembers
+  nameitem
+  nameitem ws enummembers
+
+record
+  "record" ws nameitem generics recordbody ws "end"
+
+recordbody
+  recordmembers
+  recordmembers ws "implement" ws implementations
+
+recordmembers
+  nameitem ws typeitem
+  nameitem ws typeitem ws recordmembers
+
+implementations
+  function
+  function ws implementations
+
+function
+  "function" ws nameitem ws typeitem ws "to" ws typeitem ws "end"
+
+ref
+  "ref" ws nameitem
+
+name
+  '0021' . '10FFFF'
+  '0021' . '10FFFF' name
+
+block
+  "block" ws blockitem ws "end"
+
+blockitem
+  item
+  item ws blockitem
+
+item
+  number
+  string
+  call
+  assign
+  forloop
+  whileloop
+  match
+  enum
+  record
+  function
+  ref
+  name
+  block
+
+nameitem
+  string
+  assign
+  enum
+  record
+  function
+  ref
+  name
+
+typeitem
+  name
+  name ws "of" ws typeitemgenerics ws "end"
+
+typeitemgenerics
+  name ws typeitem
+  name ws typeitem ws typeitemgenerics
+```
+
 ### Expression-based
 All code in prlm is an expression with a return value.
 
@@ -126,10 +284,4 @@ The `plrm` block can be suffixed with `collect` to collect all results instead
 of just the last one:
 \`\`\`plrmcollect
 Code here
-\`\`\`
-
-The `stdin`, `stdout`, and `return` blocks can be suffixed with `python` to run
-python code to generate the input instead of hard-coding it:
-\`\`\`stdoutpython
-Python code here
 \`\`\`

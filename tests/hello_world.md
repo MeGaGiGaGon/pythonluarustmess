@@ -1,5 +1,5 @@
 ```plrm
-call Empty print string Hello World end
+call builtins print string Hello World end
 ```
 
 ```stdout

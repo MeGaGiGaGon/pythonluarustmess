@@ -1,6 +1,6 @@
 import sys
 from typing import ClassVar, Never, final, Literal, override
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 @final
@@ -242,9 +242,6 @@ def make_meta_spanned[**P, O, E](parser_maker: Callable[P, Parser[O, E]]) -> Cal
         return Parser(new_parser)
     return new_parser_maker
 
-def forward_ref[T](func: Callable[[], T]) -> T:
-    return func()
-
 @dataclass
 class Whitespace:
     raw: Sequence[str]
@@ -335,6 +332,32 @@ class Enum:
     )
 
 @dataclass
+class Call:
+    sep1: Spanned[Whitespace]
+    call_on: CodeItem
+    sep2: Spanned[Whitespace]
+    method: CodeItem
+    sep3: Spanned[Whitespace]
+    argument: CodeItem
+
+    parser: ClassVar[Parser[Spanned[Call], None]] = ForwardRefParser(
+        lambda: make_spanned(
+            just("call")
+            .ignore_then(Whitespace.parser)
+            .then(CodeItem.parser)
+            .unpack_then(Whitespace.parser)
+            .unpack_then(CodeItem.parser)
+            .unpack_then(Whitespace.parser)
+            .unpack_then(CodeItem.parser)
+            .star_map_ok(Call)
+        ).debug("Enum")
+    )
+
+    def execute(self, scope_items: Mapping[str, CodeItem]):
+        call_on = self.call_on.execute()
+
+
+@dataclass
 class Error:
     raw: str
     message: str
@@ -350,18 +373,47 @@ class Error:
                     return e
         return Parser(inner).debug("Error")
 
+    def execute(self, scope_items: Mapping[str, CodeItem]) -> tuple[InnerCodeItem, Mapping[str, CodeItem]]:
+        return self
+
+@dataclass
+class UnknownToken:
+    raw: str
+
+    @debug("UnknownToken")
+    @spanned_simple_parser
+    @staticmethod
+    def parser(input: str, index: int) -> ParserResult[UnknownToken, None]:
+        match take_word(input, index):
+            case Ok((index, raw)):
+                return Ok((index, UnknownToken(raw)))
+            case Err() as e:
+                return e
+
+    def execute(self, scope_items: Mapping[str, CodeItem]) -> tuple[InnerCodeItem, Mapping[str, CodeItem]]:
+        return String(self.raw), scope_items
+
+type InnerCodeItem = String | Ref | Call | Enum | Is | Error | UnknownToken
+
 @dataclass
 class CodeItem:
-    item: Spanned[String | Ref | Enum | Is | Error]
+    item: Spanned[InnerCodeItem]
 
-    parser: ClassVar[Parser[CodeItem, None]]
-CodeItem.parser = (
-    String.parser
-    | Ref.parser
-    | Enum.parser
-    | Is.parser
-    | Error.parser("Unrecognized token")
-).map_ok(CodeItem).debug("CodeItem")
+    parser: ClassVar[Parser[CodeItem, None]] = ForwardRefParser(
+        lambda: (
+            String.parser
+            | Ref.parser
+            | Call.parser
+            | Enum.parser
+            | Is.parser
+            | UnknownToken.parser
+        )
+        .map_ok(CodeItem)
+        .debug("CodeItem")
+    )
+
+    def execute(self, scope_items: Mapping[str, CodeItem]) -> tuple[InnerCodeItem, Mapping[str, CodeItem]]:
+        return self.item.to_inner().execute(scope_items)
 
 @dataclass
 class CodeBlock:
