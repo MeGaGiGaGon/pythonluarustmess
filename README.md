@@ -20,11 +20,12 @@ result.
 
 ## Features/Syntax
 ### McKeeman Form Grammar
+See https://www.crockford.com/mckeeman.html
+
+Added repeats as `+` for cleaner implementation match and less recursive tuples
+and less forward references
+
 ```
-ws
-  wsitem
-  wscomment ws
-  wsitem ws
 
 wsitem
   '0020'
@@ -35,12 +36,10 @@ wsitem
 wscomment
   wsitem comment wsitem
 
-number
-  "number" ws digits ws "end"
-
-digits
-  digit
-  digit ws digits
+ws
+  wsitem ws
+  wscomment ws
+  wsitem
 
 digit
   "zero"
@@ -53,6 +52,9 @@ digit
   "seven"
   "eight"
   "nine"
+
+number
+  "number" ws digit+ ws "end"
 
 chars
   '0020' . '10FFFF' chars

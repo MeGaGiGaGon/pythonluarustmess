@@ -258,17 +258,15 @@ def make_meta_spanned[**P, O, E](parser_maker: Callable[P, Parser[O, E]]) -> Cal
         return Parser(new_parser)
     return new_parser_maker
 
+wsitem = any_of(" \n\t\r")
+wscomment = ForwardRefParser(lambda: wsitem.then(comment).unpack_then(wsitem))
 @dataclass
 class Whitespace:
     inner: str | tuple[tuple[str, tuple[str, tuple[str, Whitespace, Commenttail], str] | tuple[str, Whitespace, Commenttail], str], Whitespace] | tuple[str, Whitespace]
-ws = ForwardRefParser[Whitespace, None](lambda: (wsitem.then(ws) | wsitem | wscomment.then(ws)).map_ok(Whitespace))
-wsitem = any_of(" \n\t\r")
-wscomment = ForwardRefParser(lambda: wsitem.then(comment).unpack_then(wsitem))
+ws = ForwardRefParser[Whitespace, None](lambda: (wsitem.then(ws) | wscomment.then(ws) | wsitem).map_ok(Whitespace))
 
-number = ForwardRefParser(lambda: just("number").then(ws).unpack_then(digits).unpack_then(ws).unpack_then(just("end"))).debug("number")
-type Digits = str | tuple[str, Whitespace, Digits]
-digits = ForwardRefParser[Digits, None](lambda: (digit | digit.then(ws).unpack_then(digits)))
 digit = any_of([  "zero","one","two","three","four","five","six","seven","eight","nine"])
+number = just("number").then(ws).unpack_then(digit.one_or_more()).unpack_then(ws).unpack_then(just("end")).debug("number")
 
 chars = char_in_range(0x21, 0x10FFFF).one_or_more().map_ok("".join)
 
