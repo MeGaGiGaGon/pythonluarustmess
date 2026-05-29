@@ -1,3 +1,4 @@
+import abc
 from dataclasses import dataclass
 from typing import Never, final, Literal, override
 from collections.abc import Callable, Sequence
@@ -39,12 +40,14 @@ type ParserResult[O, E] = Result[tuple[int, O], E]
 type ParserFunc[O, E] = Callable[[str, int], ParserResult[O, E]]
 
 def simple_parser[O, E](parser: ParserFunc[O, E]) -> Parser[O, E]:
-    return Parser(parser)
+    return SimpleParser(parser)
 
-class Parser[O, E]:
-    def __init__(self, func: ParserFunc[O, E]):
-        self._func: ParserFunc[O, E] = func
-    
+class Parser[O, E](abc.ABC):
+    @property
+    @abc.abstractmethod
+    def _func(self) -> ParserFunc[O, E]:
+        ...
+
     def __call__(self, input: str, index: int) -> ParserResult[O, E]:
         return self._func(input, index)
 
@@ -55,7 +58,7 @@ class Parser[O, E]:
                     return Ok((index, to))
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
 
     def map_ok[NEW_O](self, func: Callable[[O], NEW_O]) -> Parser[NEW_O, E]:
         def inner(input: str, index: int) -> ParserResult[NEW_O, E]:
@@ -64,7 +67,7 @@ class Parser[O, E]:
                     return Ok((index, func(output)))
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
 
     def star_map_ok[*TS, NEW_O](self: Parser[tuple[*TS], E], func: Callable[[*TS], NEW_O]) -> Parser[NEW_O, E]:
         def inner(input: str, index: int) -> ParserResult[NEW_O, E]:
@@ -73,7 +76,7 @@ class Parser[O, E]:
                     return Ok((index, func(*output)))
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def __or__[OO, OE](self, other: Parser[OO, OE]) -> Parser[O | OO, OE]:
         def inner(input: str, index: int) -> ParserResult[O | OO, OE]:
@@ -82,7 +85,7 @@ class Parser[O, E]:
                     return ok
                 case Err():
                     return other(input, index)
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def then[OO, OE](self, other: Parser[OO, OE]) -> Parser[tuple[O, OO], E | OE]:
         def inner(input: str, index: int) -> ParserResult[tuple[O, OO], E | OE]:
@@ -95,7 +98,7 @@ class Parser[O, E]:
                             return e
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def unpack_then[*TS, OO, OE](self: Parser[tuple[*TS], E], other: Parser[OO, OE]) -> Parser[tuple[*TS, OO], E | OE]:
         def inner(input: str, index: int) -> ParserResult[tuple[*TS, OO], E | OE]:
@@ -108,7 +111,7 @@ class Parser[O, E]:
                             return e
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def then_ignore[OE](self, other: Parser[object, OE]) -> Parser[O, E | OE]:
         def inner(input: str, index: int) -> ParserResult[O, E | OE]:
@@ -121,7 +124,7 @@ class Parser[O, E]:
                             return e
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def ignore_then[OO, OE](self, other: Parser[OO, OE]) -> Parser[OO, E | OE]:
         def inner(input: str, index: int) -> ParserResult[OO, E | OE]:
@@ -134,7 +137,7 @@ class Parser[O, E]:
                             return e
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
 
     def zero_or_more(self) -> Parser[Sequence[O], Never]:
         def inner(input: str, index: int) -> ParserResult[Sequence[O], Never]:
@@ -146,7 +149,7 @@ class Parser[O, E]:
                     case Err():
                         break
             return Ok((index, result))
-        return Parser(inner)
+        return SimpleParser(inner)
 
     def one_or_more(self) -> Parser[Sequence[O], E]:
         def inner(input: str, index: int) -> ParserResult[Sequence[O], E]:
@@ -163,7 +166,7 @@ class Parser[O, E]:
                     return Ok((index, result))
                 case Err() as e:
                     return e
-        return Parser(inner)
+        return SimpleParser(inner)
     
     def debug(self, message: str) -> Parser[O, E]:
         def inner(input: str, index: int) -> ParserResult[O, E]:
@@ -174,18 +177,21 @@ class Parser[O, E]:
             depth -= 1
             print("  " * depth, res, sep="")
             return res
-        return Parser(inner)
+        return SimpleParser(inner)
+
+class SimpleParser[O, E](Parser[O, E]):
+    def __init__(self, func: ParserFunc[O, E]):
+        self._func: ParserFunc[O, E] = func
 
 depth = 0
 
 class ForwardRefParser[O, E](Parser[O, E]):
-    @override
-    def __init__(self, func: Callable[[], Parser[O, E]]):  # pyright: ignore[reportMissingSuperCall]
+    def __init__(self, func: Callable[[], Parser[O, E]]):
         self._meta_func: Callable[[], Parser[O, E]] = func
-    
+
     @property
     @override
-    def _func(self) -> ParserFunc[O, E]:  # pyright: ignore[reportIncompatibleMethodOverride]
+    def _func(self) -> ParserFunc[O, E]:
         return self._meta_func()
 
 def debug[O, E](message: str) -> Callable[[Parser[O, E]], Parser[O, E]]:
@@ -199,7 +205,7 @@ def just(seq: str) -> Parser[str, None]:
             return Ok((index + len(seq), seq))
         else:
             return Err(None)
-    return Parser(inner)
+    return SimpleParser(inner)
 
 def any_of(seq: Sequence[str]) -> Parser[str, None]:
     def inner(input: str, index: int) -> ParserResult[str, None]:
@@ -207,7 +213,7 @@ def any_of(seq: Sequence[str]) -> Parser[str, None]:
             if input.startswith(item, index):
                 return Ok((index + len(item), item))
         return Err(None)
-    return Parser(inner)
+    return SimpleParser(inner)
 
 def char_in_range(start: int, end: int) -> Parser[str, None]:
     def inner(input: str, index: int) -> ParserResult[str, None]:
@@ -215,7 +221,7 @@ def char_in_range(start: int, end: int) -> Parser[str, None]:
             if start <= ord(input[index]) <= end:
                 return Ok((index + 1, input[index]))
         return Err(None)
-    return Parser(inner)
+    return SimpleParser(inner)
 
 class Spanned[T]:
     def __init__(self, inner: T, start: int, end: int):
@@ -239,10 +245,10 @@ def make_spanned[O, E](parser: Parser[O, E]) -> Parser[Spanned[O], E]:
                 return Ok((new_index, Spanned(to_span, index, new_index)))
             case Err():
                 return result
-    return Parser(new_parser)
+    return SimpleParser(new_parser)
 
 def spanned_simple_parser[O, E](parser: ParserFunc[O, E]) -> Parser[Spanned[O], E]:
-    return make_spanned(Parser(parser))
+    return make_spanned(SimpleParser(parser))
 
 def make_meta_spanned[**P, O, E](parser_maker: Callable[P, Parser[O, E]]) -> Callable[P, Parser[Spanned[O], E]]:
     def new_parser_maker(*args: P.args, **kwargs: P.kwargs) -> Parser[Spanned[O], E]:
@@ -255,7 +261,7 @@ def make_meta_spanned[**P, O, E](parser_maker: Callable[P, Parser[O, E]]) -> Cal
                     return Ok((new_index, Spanned(to_span, index, new_index)))
                 case Err():
                     return result
-        return Parser(new_parser)
+        return SimpleParser(new_parser)
     return new_parser_maker
 
 wsitem = any_of(" \n\t\r")
