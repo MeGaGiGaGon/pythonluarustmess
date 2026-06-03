@@ -121,19 +121,21 @@ recordtype
   "varadicrecord"
 
 recordbody
-  recordmembers
-  recordmembers ws "implement" ws implementations
+  recordmembers ws
+  recordmembers ws "implement" ws implementation+
 
 recordmembers
   nameitem ws typeitem
   nameitem ws typeitem ws recordmembers
 
-implementations
-  function
-  function ws implementations
+implementation
+  function ws
 
 function
-  "function" ws nameitem ws typeitem ws "to" ws typeitem ws "end"
+  "function" generics nameitem ws typeitem ws typeitem ws "end"
+
+externalfunction
+  "externalfunction" generics nameitem ws typeitem ws typeitem
 
 ref
   "ref" ws nameitem
