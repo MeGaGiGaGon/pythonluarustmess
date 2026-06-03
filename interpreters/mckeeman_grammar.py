@@ -1,6 +1,6 @@
 import abc
 from dataclasses import dataclass
-from typing import Any, ClassVar, Never, final, Literal, override
+from typing import ClassVar, Never, final, Literal, override
 from collections.abc import Callable, Sequence
 
 @final
@@ -447,10 +447,10 @@ class Enum:
     sep1: Whitespace
     name: NameItem
     generics: Generics | Whitespace
-    body: Sequence[tuple[NameItem, Whitespace]] | Whitespace
+    body: tuple[Sequence[tuple[NameItem, Whitespace]] | Whitespace, Whitespace, str, Whitespace, Implementations] | Whitespace | Sequence[tuple[NameItem, Whitespace]]
     end: str
 
-    enummembers: ClassVar[Parser[Sequence[tuple[NameItem, Whitespace]], None]] = ForwardRefParser(lambda: NameItem.parser.then(ws).one_or_more() | ws)
+    enummembers: ClassVar[Parser[Sequence[tuple[NameItem, Whitespace]] | Whitespace, None]] = ForwardRefParser(lambda: NameItem.parser.then(ws).one_or_more() | ws)
 enumbody = Enum.enummembers.then(ws).unpack_then(just("implement")).unpack_then(ws).unpack_then(implementations) | Enum.enummembers
 enum = ForwardRefParser(lambda: just("enum").then(ws).unpack_then(NameItem.parser).unpack_then(generics).unpack_then(enumbody).unpack_then(just("end")).star_map_ok(Enum)).debug("enum")
 
@@ -460,18 +460,40 @@ class Record:
     sep1: Whitespace
     name: NameItem
     generics: Generics | Whitespace
-    body: tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers] | tuple[RecordMembers, Whitespace, str, Whitespace, Implementations]
+    body: tuple[Sequence[tuple[NameItem, Whitespace, TypeItem, Whitespace]] | Whitespace, Whitespace, str, Whitespace, Implementations] | Sequence[tuple[NameItem, Whitespace, TypeItem, Whitespace]] | Whitespace
     end: str
+
+    recordmembers: ClassVar[Parser[Sequence[tuple[NameItem, Whitespace, TypeItem, Whitespace]] | Whitespace, None]] = ForwardRefParser(lambda: NameItem.parser.then(ws).unpack_then(typeitem).unpack_then(ws).one_or_more() | ws)
+recordbody = Record.recordmembers.then(ws).unpack_then(just("implement")).unpack_then(ws).unpack_then(implementations) | Record.recordmembers
 record = ForwardRefParser(lambda: just("record").then(ws).unpack_then(NameItem.parser).unpack_then(generics).unpack_then(recordbody).unpack_then(just("end")).star_map_ok(Record))
-type RecordMembers = tuple[NameItem, Whitespace, TypeItem] | tuple[NameItem, Whitespace, TypeItem, Whitespace, RecordMembers]
-recordmembers = ForwardRefParser[RecordMembers, None](lambda: NameItem.parser.then(ws).unpack_then(typeitem) | NameItem.parser.then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(recordmembers))
-recordbody = recordmembers | recordmembers.then(ws).unpack_then(just("implement")).unpack_then(ws).unpack_then(implementations)
 
 @dataclass
 class Function:
-    inner: tuple[str, Generics | Whitespace, NameItem, Whitespace, TypeItem, Whitespace, TypeItem, Whitespace, BlockItem, Whitespace, str]
+    # Manual init since otherwise pyright can't auto-generate init type
+    def __init__(self, 
+        function: str,
+        generics: Generics | Whitespace,
+        name: NameItem,
+        sep1: Whitespace,
+        input: TypeItem,
+        sep2: Whitespace,
+        output: TypeItem,
+        sep3: Whitespace,
+        blockitem: BlockItem,
+        end: str,
+    ) -> None:
+        self.function: str = function
+        self.generics: Generics | Whitespace = generics
+        self.name: NameItem = name
+        self.sep1: Whitespace = sep1
+        self.input: TypeItem = input
+        self.sep2: Whitespace = sep2
+        self.output: TypeItem = output
+        self.sep3: Whitespace = sep3
+        self.blockitem: BlockItem = blockitem
+        self.end: str = end
     
-    parser: ClassVar[Parser[Function, None]] = ForwardRefParser(lambda: just("function").then(generics).unpack_then(NameItem.parser).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(Block.blockitem).unpack_then(ws).unpack_then(just("end")).map_ok(Function)).debug("function")
+    parser: ClassVar[Parser[Function, None]] = ForwardRefParser(lambda: just("function").then(generics).unpack_then(NameItem.parser).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(typeitem).unpack_then(ws).unpack_then(Block.blockitem).unpack_then(just("end")).star_map_ok(Function)).debug("function")
 
 @dataclass
 class ExternalFunction:
